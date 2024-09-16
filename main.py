@@ -9,62 +9,66 @@ st.set_page_config(page_title="ChatWithLLM", page_icon="👍")
 
 st.title("ChatWithLLM :computer:")
 
-
+# Inicialização do estado da sessão
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
-
-
+if "model_option" not in st.session_state:
+    st.session_state.model_option = None
 
 def get_response(query, chat_history, model_option):
     template = """
-    Você é um assistente útil. Responda às seguintes perguntas considerando o histórico da conversa.
-    Se o histórico do chat estiver vazio, responda a pergunta de forma objetiva:
+    Considere o histórico da conversa abaixo e responda à pergunta de forma direta.
 
-    Histórico do chat: {chat_history}
+    Histórico da conversa:
+    {chat_history}
 
-    Pergunta do usuário: {user_question}
+    Pergunta:
+    {user_question}
     """
 
     prompt = ChatPromptTemplate.from_template(template)
-
-    llm = ChatOllama(model=model_option, temperature=0)
-
+    llm = ChatOllama(model=model_option, temperature=0) 
     chain = prompt | llm | StrOutputParser()
 
     return chain.stream({
-     "chat_history": chat_history,
-     "user_question": query   
+        "chat_history": chat_history,
+        "user_question": query
     })
 
-# chat complete
 
-for message in st.session_state.chat_history:
-    if isinstance(message, HumanMessage):
-        with st.chat_message("User"):
-            st.markdown(message.content)
-    else:
-        with st.chat_message("AI"):
-            st.markdown(message.content) 
+# Exibição do histórico do chat
+def display_chat_history():
+    for message in st.session_state.chat_history:
+        if isinstance(message, HumanMessage):
+            with st.chat_message("User"):
+                st.markdown(message.content)
+        else:
+            with st.chat_message("AI"):
+                st.markdown(message.content)
 
-# sidebar
-
+# Seção lateral (sidebar) para seleção de parâmetros
 with st.sidebar:
     models = get_models()
     st.header("Parâmetros")
-    model_option = st.selectbox("Escolha um modelo", models, index=None, placeholder="Disponível no Ollama")
-    if model_option is not None:
-        st.write("Você escolheu: ", model_option, ":white_check_mark:")
+    st.session_state.model_option = st.selectbox("Escolha um modelo", models, index=None, placeholder="Disponível no Ollama")
+    if st.session_state.model_option:
+        st.write("Você escolheu: ", st.session_state.model_option, ":white_check_mark:")
 
-# user 
-user_query = st.chat_input("Query here")
-if user_query is not None and user_query != "" and model_option is not None:
+if not st.session_state.model_option:
+    st.warning("Selecione um modelo para começar a conversar.")
+    st.stop()
+
+# Exibir o histórico do chat
+display_chat_history()
+
+# Entrada do usuário
+user_query = st.chat_input("Digite sua pergunta aqui")
+if user_query:
     st.session_state.chat_history.append(HumanMessage(user_query))
-
     with st.chat_message("User"):
         st.markdown(user_query)
 
     with st.chat_message("AI"):
-        ai_response = st.write_stream(get_response(user_query, st.session_state.chat_history, model_option))
-    st.session_state.chat_history.append(AIMessage(ai_response))
-
+        ai_response = st.write_stream(get_response(user_query, st.session_state.chat_history, st.session_state.model_option))
+        st.session_state.chat_history.append(AIMessage(ai_response))
 

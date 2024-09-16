@@ -1,0 +1,22 @@
+Questão 1 (Compreensão textual):
+Tem um bolo na mesa da sala de jantar, eu ando até lá e coloco um prato em cima do bolo, 
+depois, pego o prato e levo para a cozinha. Onde está localizado o bolo atualmente?
+
+There is a cake on a table in the dinning room, I walk over to the cake and place a plate on top of the cake,
+I then pick up the plate and take it into the kitchen.
+Which room is the cake currently in?
+
+Resposta Esperada: "Na sala de jantar"
+
+Questão 2 (Sequência Numérica): 
+Complete a sequência: 2, 4, 8, 16, ___.
+Resposta Esperada: "32"
+
+Questão 3 (Raciocínio Dedutivo): 
+João é mais alto que Pedro. Pedro é mais alto que Carlos. Quem é o mais baixo?
+Resposta Esperada: "Carlos"
+
+Questão 4 (Analogia): 
+Cachorro é para latido assim como gato é para ___.
+Resposta Esperada: "miado"
+
