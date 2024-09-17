@@ -17,7 +17,7 @@ Antes de começar, certifique-se de ter os seguintes itens instalados:
    Clone o repositório para sua máquina local usando o comando Git:
 
    ```bash
-   git clone git@github.com:mariannedutra/ChatWithLLM.git
+   git clone https://github.com/mariannedutra/ChatWithLLM.git
    ```
 
 2. **Crie e ative um ambiente virtual**
