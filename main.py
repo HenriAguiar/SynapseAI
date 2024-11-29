@@ -1,47 +1,114 @@
-from api_ollama import get_models
-
 import streamlit as st
-
-from langchain_core.messages import HumanMessage, AIMessage
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain.schema import HumanMessage, AIMessage, LLMResult
+from langchain.prompts import ChatPromptTemplate
+from langchain.chains import LLMChain
 from langchain_community.chat_models import ChatOllama
 
-# configurações da página
-st.set_page_config(page_title="ChatWithLLM", page_icon="👍")
+# Updated imports
+from langchain_community.document_loaders import DirectoryLoader, TextLoader
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain.callbacks.base import BaseCallbackHandler
+import ollama
 
+def get_models():
+    try:
+        # Tenta listar os modelos disponíveis
+        models = ollama.list()
+        model_names = [model['name'] for model in models['models']]
+        return model_names
+    except Exception as e:
+        print(f"Erro ao conectar ou listar modelos do Ollama: {e}")
+        # Retorna modelos manualmente configurados como fallback
+        return ["llama3.1:8b-instruct-q8_0"]
+
+model_names = get_models()
+
+if model_names:
+    print("Modelos disponíveis:", model_names)
+else:
+    print("Nenhum modelo encontrado ou servidor indisponível.")
+
+# Page configuration
+st.set_page_config(page_title="ChatWithLLM", page_icon="👍")
 st.title("ChatWithLLM :computer:")
 
-# inicialização do estado da sessão
+# Session state initialization
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "model_option" not in st.session_state:
     st.session_state.model_option = None
 
+# Initialize the embedding model and vector store
+if 'embedding_model' not in st.session_state:
+    st.session_state.embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-# função para obter a resposta do modelo
+if 'vector_store' not in st.session_state:
+    # Load documents
+    loader = DirectoryLoader('documents', glob='**/*.txt', loader_cls=TextLoader)
+    documents = loader.load()
+    # Initialize vector store
+    persist_directory = 'chromadb'
+    st.session_state.vector_store = Chroma.from_documents(
+        documents,
+        st.session_state.embedding_model,
+        persist_directory=persist_directory
+    )
+    # Remove the manual persist call
+    # st.session_state.vector_store.persist()
+
+# Streamlit Callback Handler
+class StreamlitCallbackHandler(BaseCallbackHandler):
+    def __init__(self, container):
+        self.container = container
+        self.text = ""
+
+    def on_llm_new_token(self, token: str, **kwargs):
+        self.text += token
+        self.container.markdown(self.text + "▌")
+
+    def on_llm_end(self, response: LLMResult, **kwargs):
+        self.container.markdown(self.text)
+
+# Function to get response from the model
 def get_response(query, chat_history, model_option):
+    # Initialize the retriever
+    retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 3})
+    # Retrieve relevant documents
+    relevant_docs = retriever.get_relevant_documents(query)
+    retrieved_text = "\n\n".join([doc.page_content for doc in relevant_docs])
+
     template = """
-    Considere o histórico da conversa abaixo, caso esse exista, e responda à pergunta de forma direta.
+    Use the following retrieved documents to answer the question.
+    If the answer is not contained within the documents below, respond that you don't know.
 
-    Histórico da conversa:
-    {chat_history}
+    Retrieved Documents:
+    {retrieved_text}
 
-    Pergunta:
+    Question:
     {user_question}
     """
 
     prompt = ChatPromptTemplate.from_template(template)
-    llm = ChatOllama(model=model_option, temperature=0) 
-    chain = prompt | llm | StrOutputParser()
+    llm = ChatOllama(model=model_option, temperature=0, streaming=True)
+    chain = LLMChain(prompt=prompt, llm=llm)
 
-    return chain.stream({
-        "chat_history": chat_history,
-        "user_question": query
-    })
+    # Create a placeholder in Streamlit
+    placeholder = st.empty()
+    callback_handler = StreamlitCallbackHandler(placeholder)
 
+    # Run the chain with the callback handler
+    chain.run(
+        {
+            "retrieved_text": retrieved_text,
+            "user_question": query
+        },
+        callbacks=[callback_handler]
+    )
 
-# exibição do histórico do chat
+    return callback_handler.text
+
+# Display chat history
 def display_chat_history():
     for message in st.session_state.chat_history:
         if isinstance(message, HumanMessage):
@@ -51,29 +118,28 @@ def display_chat_history():
             with st.chat_message("AI"):
                 st.markdown(message.content)
 
-# sidebar
+# Sidebar
 with st.sidebar:
-    models = get_models()
-    st.header("Parâmetros")
-    st.session_state.model_option = st.selectbox("Escolha um modelo", models, index=None, placeholder="Disponível no Ollama")
+    models = get_models()  # Ensure this function is defined
+    st.header("Parameters")
+    st.session_state.model_option = st.selectbox("Choose a model", models, index=None, placeholder="Available in Ollama")
     if st.session_state.model_option:
-        st.write("Você escolheu: ", st.session_state.model_option, ":white_check_mark:")
+        st.write("You selected: ", st.session_state.model_option, ":white_check_mark:")
 
 if not st.session_state.model_option:
-    st.warning("Selecione um modelo para começar a conversar.")
+    st.warning("Select a model to start chatting.")
     st.stop()
 
-# exibe histórico
+# Display chat history
 display_chat_history()
 
-# entrada do usuário
-user_query = st.chat_input("Digite sua pergunta aqui")
+# User input
+user_query = st.chat_input("Type your question here")
 if user_query:
-    st.session_state.chat_history.append(HumanMessage(user_query))
+    st.session_state.chat_history.append(HumanMessage(content=user_query))
     with st.chat_message("User"):
         st.markdown(user_query)
 
     with st.chat_message("AI"):
-        ai_response = st.write_stream(get_response(user_query, st.session_state.chat_history, st.session_state.model_option))
-        st.session_state.chat_history.append(AIMessage(ai_response))
-
+        response = get_response(user_query, st.session_state.chat_history, st.session_state.model_option)
+        st.session_state.chat_history.append(AIMessage(content=response))
