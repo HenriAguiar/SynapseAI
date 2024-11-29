@@ -6,3 +6,4 @@ chromadb
 langchain 
 sentence-transformers
 langchain-huggingface
+pypdf
