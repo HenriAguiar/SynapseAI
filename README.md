@@ -62,3 +62,4 @@ A aplicação estará disponível no seu navegador em [localhost:8501](http://lo
 
 :)
 
+"# SynapseAI" 
