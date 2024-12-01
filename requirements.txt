@@ -2,7 +2,7 @@ streamlit
 langchain
 langchain_community
 ollama
-chromadb 
-langchain 
+chromadb
 sentence-transformers
 langchain-huggingface
+pypdf

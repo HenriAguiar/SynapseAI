@@ -5,29 +5,41 @@ from langchain.chains import LLMChain
 from langchain_community.chat_models import ChatOllama
 
 # Updated imports
-from langchain_community.document_loaders import DirectoryLoader, TextLoader
+from langchain.document_loaders import PyPDFLoader
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.callbacks.base import BaseCallbackHandler
-import ollama
+import hashlib
+import os
 
+# Utility to compute file hash
+def compute_file_hash(filepath):
+    """Compute a hash for a given file."""
+    hasher = hashlib.sha256()
+    with open(filepath, 'rb') as file:
+        buf = file.read()
+        hasher.update(buf)
+    return hasher.hexdigest()
+
+# Function to list available models from Ollama
 def get_models():
     try:
-        # Tenta listar os modelos disponíveis
+        # List available models
+        import ollama
         models = ollama.list()
         model_names = [model['name'] for model in models['models']]
         return model_names
     except Exception as e:
-        print(f"Erro ao conectar ou listar modelos do Ollama: {e}")
-        # Retorna modelos manualmente configurados como fallback
+        print(f"Error connecting to Ollama: {e}")
+        # Return fallback models if connection fails
         return ["llama3.1:8b-instruct-q8_0"]
 
 model_names = get_models()
 
 if model_names:
-    print("Modelos disponíveis:", model_names)
+    print("Available models:", model_names)
 else:
-    print("Nenhum modelo encontrado ou servidor indisponível.")
+    print("No models found or server unavailable.")
 
 # Page configuration
 st.set_page_config(page_title="ChatWithLLM", page_icon="👍")
@@ -38,24 +50,60 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "model_option" not in st.session_state:
     st.session_state.model_option = None
+if "document_hashes" not in st.session_state:
+    st.session_state.document_hashes = {}
 
 # Initialize the embedding model and vector store
 if 'embedding_model' not in st.session_state:
     st.session_state.embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 if 'vector_store' not in st.session_state:
-    # Load documents
-    loader = DirectoryLoader('documents', glob='**/*.txt', loader_cls=TextLoader)
-    documents = loader.load()
-    # Initialize vector store
+    # Initialize vector store from existing directory if it exists
     persist_directory = 'chromadb'
-    st.session_state.vector_store = Chroma.from_documents(
-        documents,
-        st.session_state.embedding_model,
-        persist_directory=persist_directory
-    )
-    # Remove the manual persist call
-    # st.session_state.vector_store.persist()
+    new_documents = []
+
+    try:
+        # Attempt to load the vector store
+        st.session_state.vector_store = Chroma(
+            persist_directory=persist_directory,
+            embedding_function=st.session_state.embedding_model
+        )
+        st.write("Vector store loaded from persistence directory.")
+    except Exception:
+        st.write("No vector store found. Creating a new one...")
+        st.session_state.vector_store = None
+
+    # Process multiple PDF documents
+    documents_path = 'documents'  # Folder containing PDF files
+    for filename in os.listdir(documents_path):
+        if filename.endswith('.pdf'):
+            file_path = os.path.join(documents_path, filename)
+            document_hash = compute_file_hash(file_path)
+
+            if document_hash in st.session_state.document_hashes:
+                st.write(f"Document '{filename}' already processed. Skipping embedding...")
+            else:
+                # Load and process the PDF
+                pdf_loader = PyPDFLoader(file_path)
+                pdf_documents = pdf_loader.load()
+                new_documents.extend(pdf_documents)
+
+                # Save the hash of the processed document
+                st.session_state.document_hashes[document_hash] = True
+                st.write(f"Document '{filename}' added for embedding.")
+
+    # Add new documents to the vector store if any
+    if new_documents:
+        if st.session_state.vector_store:
+            st.session_state.vector_store.add_documents(new_documents)
+            st.write("New documents embedded and added to the existing vector store.")
+        else:
+            st.session_state.vector_store = Chroma.from_documents(
+                new_documents,
+                st.session_state.embedding_model,
+                persist_directory=persist_directory
+            )
+            st.write("Vector store created and new documents embedded.")
 
 # Streamlit Callback Handler
 class StreamlitCallbackHandler(BaseCallbackHandler):
@@ -71,13 +119,24 @@ class StreamlitCallbackHandler(BaseCallbackHandler):
         self.container.markdown(self.text)
 
 # Function to get response from the model
+# Function to get response from the model
 def get_response(query, chat_history, model_option):
     # Initialize the retriever
     retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 3})
     # Retrieve relevant documents
     relevant_docs = retriever.get_relevant_documents(query)
+
+    # Log retrieved documents
+    st.write("Retrieved the following documents from the vector store:")
+    for idx, doc in enumerate(relevant_docs, 1):
+        st.write(f"Document {idx}:")
+        st.write(f"Page Content:\n{doc.page_content}")
+        st.write(f"Metadata: {doc.metadata}")
+
+    # Combine retrieved documents into a single string
     retrieved_text = "\n\n".join([doc.page_content for doc in relevant_docs])
 
+    # Create the prompt template
     template = """
     Use the following retrieved documents to answer the question.
     If the answer is not contained within the documents below, respond that you don't know.
@@ -107,6 +166,7 @@ def get_response(query, chat_history, model_option):
     )
 
     return callback_handler.text
+
 
 # Display chat history
 def display_chat_history():
