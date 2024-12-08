@@ -1,7 +1,7 @@
 
-# ChatWithLLM
+# Synapsys
 
-Repositório criado para o ciclo de seminários da faculdade Ulbra Palmas-TO!
+Repositório criado para o projet ofinal da materia de sistemas inteligentes
 
 ## Pré-requisitos
 
@@ -62,4 +62,4 @@ A aplicação estará disponível no seu navegador em [localhost:8501](http://lo
 
 :)
 
-"# SynapseAI" 
+"# Synapsys" 
